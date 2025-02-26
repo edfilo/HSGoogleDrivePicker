@@ -25,6 +25,6 @@ Pod::Spec.new do |s|
 
   #1.3.x causes error where methods on GTLRDriveService are unavailable
   s.dependency 'GoogleAPIClientForREST/Drive', '~> 1.2.1'
-  s.dependency 'GoogleSignIn', '~> 6.2'
+  s.dependency 'GoogleSignIn', '~> 8.0'
 
 end
