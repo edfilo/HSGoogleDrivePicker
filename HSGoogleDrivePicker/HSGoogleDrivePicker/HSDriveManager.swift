@@ -37,8 +37,10 @@ private let kKeychainItemName = "Drive API"
         // Initialize the Drive API service & load existing credentials from the keychain if available.
         service = GTLRDriveService()
         
-        service?.authorizer = HSGIDSignInHandler.authoriser
+        //service?.authorizer = HSGIDSignInHandler.authoriser
+        service?.authorizer = HSGoogleSignInBridge.authorizer
     }
+    
     
     // MARK: download
     @discardableResult
@@ -106,6 +108,7 @@ private let kKeychainItemName = "Drive API"
     
     // MARK: auth controller
     func updateAuthoriser() {
-        service?.authorizer = HSGIDSignInHandler.authoriser
+        service?.authorizer = HSGoogleSignInBridge.authorizer
+        //service?.authorizer = HSGIDSignInHandler.authoriser
     }
 }

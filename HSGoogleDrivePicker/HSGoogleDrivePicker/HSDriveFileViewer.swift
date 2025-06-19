@@ -108,9 +108,9 @@ open class HSDriveFileViewer: UIViewController, UITableViewDataSource, UITableVi
         view.addConstraints(NSLayoutConstraint.constraints(withVisualFormat: "V:|[toolbar(44)][tableView]|", options: .directionLeftToRight, metrics: nil, views: views))
 
         
-        NotificationCenter.default.addObserver(self, selector: #selector(authFailed), name: HSGIDSignInHandler.hsGIDSignInFailedNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(authFailed), name:  HSGoogleSignInNotifications.signInFailed, object: nil)
         
-        NotificationCenter.default.addObserver(self, selector: #selector(authUpdated), name: HSGIDSignInHandler.hsGIDSignInChangedNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(authUpdated), name: HSGoogleSignInNotifications.signInChanged, object: nil)
         
         setupButtons()
         updateButtons()
@@ -123,20 +123,31 @@ open class HSDriveFileViewer: UIViewController, UITableViewDataSource, UITableVi
     
     // When the view appears, ensure that the Drive API service is authorized, and perform API calls.
     override open func viewDidAppear(_ animated: Bool) {
-        
-        
-        
-        if HSGIDSignInHandler.canAuthorise() {
-            //after first sign in, the authoriser is updated before viewDidAppear is called
-            
+        super.viewDidAppear(animated)        // keep super
+
+        // ---- are we already authorised? ----
+        if HSGoogleSignInBridge.authorizer != nil {
+            // first (or subsequent) appearance after a successful sign-in
             getFiles()
+
         } else if shouldSignInOnAppear {
+            // only try once per presentation
             shouldSignInOnAppear = false
-            HSGIDSignInHandler.signIn(from: self)
+
+            // launch the Google sheet
+            _ = HSGoogleSignInBridge.shared.signIn(from: self) { [weak self] user, error in
+                if user != nil {
+                    self?.getFiles()         // authorised → fetch Drive files
+                } else {
+                    // optional: show an alert or fallback UI
+                }
+                self?.updateRightButton()    // refresh UI either way
+            }
+            return                           // avoid calling updateRightButton twice
         }
-        
+
+        // no sign-in needed; just refresh the bar button
         updateRightButton()
-        
     }
     
     override open func viewWillDisappear(_ animated: Bool) {
@@ -156,7 +167,11 @@ open class HSDriveFileViewer: UIViewController, UITableViewDataSource, UITableVi
     }
     
     @objc func signOut() {
-        HSGIDSignInHandler.signOut()
+        HSGoogleSignInBridge.shared.signOut()          // clears current user
+        NotificationCenter.default.post(               // keep legacy “changed” signal
+            name: HSGoogleSignInNotifications.signInChanged,
+            object: nil)
+
         dismiss(animated: true)
     }
     
