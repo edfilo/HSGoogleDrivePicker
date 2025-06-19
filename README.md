@@ -1,3 +1,6 @@
+⚠️ This fork updates HSGoogleDrivePicker to GoogleSign-In SDK 7.x and
+FirebaseUI 12+. Delegate API removed, closure-based bridge added.
+
 # HSGoogleDrivePicker
 A sane and simple file picker for Google Drive.
 
