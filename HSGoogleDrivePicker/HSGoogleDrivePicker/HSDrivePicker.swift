@@ -1,100 +1,96 @@
+import UIKit
 import GoogleSignIn
 import GoogleAPIClientForREST
-import UIKit
 
-/// Navigation controller to present the File Viewer and signin controller
-@objcMembers open class HSDrivePicker: UINavigationController {
-    /** Provide your API secret
-     Note that the client ID is read from your GoogleService-Info.plist
-     **/
-    
-    
-    /** Present the picker from your view controller. It will present as a modal form.
-     The completion returns both the file, and the authorised manager which can be used to download the file **/
-    
-    
-    /*
-     
-     Appearance can mostly be managed through the appearance proxy.
-     e.g.  [[UINavigationBar appearance] setBackgroundImage: <your image> ];
-     
-     or to style the segmented control (which is addmittedly wierd)
-     
-     //selected text
-     [[UISegmentedControl appearance] setTitleTextAttributes:@{NSForegroundColorAttributeName : [UIColor redColor]} forState:UIControlStateSelected];
-     //not selected text
-     [[UISegmentedControl appearance] setTitleTextAttributes:@{NSForegroundColorAttributeName : [UIColor greenColor]} forState:UIControlStateNormal];
-     //background
-     [[UIImageView appearanceWhenContainedIn:[UISegmentedControl class],nil] setTintColor:[UIColor blueColor]];
-     
-     */
-    
-    
-    //*specify status bar style. Default is UIStatusBarStyleDefault *
-    
-    
-    /**
-     Handle the url callback from google authentication
-     
-     @param url the callback url
-     */
-    
-    
-    private var viewer: HSDriveFileViewer?
- 
-    public class func handle(_ url: URL?) -> Bool {
-        _ = HSGIDSignInHandler.sharedInstance
-        if let url, GIDSignIn.sharedInstance.handle(url) {
-            return true
-        }
-        
-        return false
+/// Navigation controller to present the File Viewer and Google-Drive picker UI.
+/// Updated for GoogleSignIn v7+ (no more `GIDSignInDelegate`).
+@objcMembers public class HSDrivePicker: UINavigationController {
+
+    // MARK: – Public API
+
+    /// Ask the picker to appear from the given view-controller.
+    /// The completion returns the authorised manager and the file the user picked.
+    public func pick(from presenter: UIViewController?,
+                     withCompletion completion: @escaping (_ manager: HSDriveManager?, _ file: GTLRDrive_File?) -> Void) {
+        viewer?.completion = completion
+        viewer?.shouldSignInOnAppear = true
+        presenter?.present(self, animated: true)
     }
-    
+
+    /// Handle OAuth callback URLs in AppDelegate:
+    /// ```swift
+    /// func application(_ app: UIApplication,
+    ///                  open url: URL,
+    ///                  options: [UIApplication.OpenURLOptionsKey : Any] = [:]) -> Bool {
+    ///     return HSDrivePicker.handle(url)
+    /// }
+    /// ```
+    public class func handle(_ url: URL?) -> Bool {
+        guard let url else { return false }
+        return GIDSignIn.sharedInstance.handle(url)
+    }
+
+    // MARK: – Initialisation
+
     public override init(nibName nibNameOrNil: String?, bundle nibBundleOrNil: Bundle?) {
         super.init(nibName: nibNameOrNil, bundle: nibBundleOrNil)
     }
-    
+
     public init() {
         let viewer = HSDriveFileViewer()
-
         super.init(rootViewController: viewer)
-        modalPresentationStyle = UIModalPresentationStyle.pageSheet
+        modalPresentationStyle = .pageSheet
         self.viewer = viewer
     }
-    
-    required public init?(coder aDecoder: NSCoder) {
+
+    required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
-    
-    public func pick(from vc: UIViewController?, withCompletion completion: @escaping (_ manager: HSDriveManager?, _ file: GTLRDrive_File?) -> Void) {
-        viewer?.completion = completion
-        viewer?.shouldSignInOnAppear = true
-        
-        vc?.present(self, animated: true)
-        
-    }
-    
-    func downloadFileContent(withService service: GTLRDriveService?, file: GTLRDrive_File?, completionBlock: @escaping (Data?, Error?) -> Void) {
-        
+    // MARK: – Private
+
+    private var viewer: HSDriveFileViewer?
+
+    /// Helper to download the *content* of a picked file after the user selects it.
+    /// Call this on the authorised `GTLRDriveService` you get from `HSDriveManager`.
+    func downloadFileContent(withService service: GTLRDriveService?,
+                             file: GTLRDrive_File?,
+                             completionBlock: @escaping (Data?, Error?) -> Void) {
         guard let downloadURL = file?.downloadURL else {
-            completionBlock(nil, NSError(domain: NSURLErrorDomain, code: NSURLErrorBadURL, userInfo: nil))
+            completionBlock(nil, NSError(domain: NSURLErrorDomain,
+                                         code: NSURLErrorBadURL,
+                                         userInfo: nil))
             return
         }
-            let fetcher = service?.fetcherService.fetcher(with: downloadURL)
-            
-        fetcher?.beginFetch(completionHandler: { data, error in
-                if error == nil {
-                    // Success.
-                    completionBlock(data, nil)
-                } else {
-                    if let error = error {
-                        print("An error occurred: \(error)")
-                    }
-                    completionBlock(nil, error!)
-                }
-            })
+        let fetcher = service?.fetcherService.fetcher(with: downloadURL)
+        fetcher?.beginFetch { data, error in
+            if let error {
+                print("[HSDrivePicker] Download error: \(error)")
+                completionBlock(nil, error)
+            } else {
+                completionBlock(data, nil)
+            }
+        }
+    }
 
+    // MARK: – Sign-In flow injected into the viewer
+    // HSDriveFileViewer triggers sign-in via the bridge on appear.
+    internal func ensureSignedIn(presenter: UIViewController,
+                                 completion: @escaping (GIDGoogleUser?, Error?) -> Void) {
+        // First try to restore silently
+        HSGoogleSignInBridge.shared.restoreIfPossible { [weak presenter] restoredUser in
+            if let user = restoredUser {
+                completion(user, nil)
+            } else if let presenter {
+                // Present the sign-in sheet
+                _ = HSGoogleSignInBridge.shared.signIn(from: presenter) { user, error in
+                    completion(user, error)
+                }
+            } else {
+                completion(nil, NSError(domain: "HSGoogleDrivePicker",
+                                        code: -43,
+                                        userInfo: [NSLocalizedDescriptionKey: "No presenter VC for sign-in"]))
+            }
+        }
     }
 }
